@@ -169,7 +169,7 @@
     <input type="text" id="folderId" value="1N64KZLDRgeIVfUHtZ4A9diF4fRjwwp4Z">
 
     <label for="refInput">Reference photo of the person</label>
-    <input type="file" id="refInput" accept="image/*">
+    <input type="file" id="refInput" accept="image/*" disabled>
     <img id="refPreview" alt="reference preview">
 
     <label for="threshold" style="margin-top:12px;">Match strictness (lower = stricter match)</label>
@@ -208,19 +208,27 @@ function extractFolderId(raw) {
 }
 
 async function loadModels() {
-  await Promise.all([
-    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-  ]);
-  modelsReady = true;
-  setStatus('Ready. Upload a reference photo and sign in to search.');
+  try {
+    // tinyFaceDetector is a single small file and loads far more reliably
+    // from CDNs than ssdMobilenetv1 (which needs several shard files).
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    modelsReady = true;
+    document.getElementById('refInput').disabled = false;
+    setStatus('Ready. Upload a reference photo and sign in to search.');
+  } catch (e) {
+    console.error('Model load failed:', e);
+    setStatus('Failed to load face models: ' + e.message + ' (check console for details, and see if cdn.jsdelivr.net is reachable)', true);
+  }
 }
-loadModels().catch((e) => setStatus('Failed to load face models: ' + e.message, true));
+loadModels();
 
 document.getElementById('threshold').addEventListener('input', (e) => {
   document.getElementById('thresholdLabel').textContent = 'Threshold: ' + e.target.value;
 });
+
+const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 });
 
 document.getElementById('refInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -233,20 +241,27 @@ document.getElementById('refInput').addEventListener('change', async (e) => {
     setStatus('Still loading face models, try again in a moment…', true);
     return;
   }
-  setStatus('Analyzing reference photo…');
-  const img = await faceapi.bufferToImage(file);
-  const detection = await faceapi
-    .detectSingleFace(img)
-    .withFaceLandmarks()
-    .withFaceDescriptor();
 
-  if (!detection) {
-    setStatus('No face detected in that photo. Try a clearer, front-facing photo.', true);
-    refDescriptor = null;
-    return;
+  refDescriptor = null;
+  setStatus('Analyzing reference photo…');
+
+  try {
+    const img = await faceapi.bufferToImage(file);
+    const detection = await faceapi
+      .detectSingleFace(img, detectorOptions)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) {
+      setStatus('No face detected in that photo. Try a clearer, front-facing, well-lit photo (and avoid HEIC files — convert to JPG/PNG first).', true);
+      return;
+    }
+    refDescriptor = detection.descriptor;
+    setStatus('Reference face captured. Ready to search.');
+  } catch (err) {
+    console.error('Reference photo analysis failed:', err);
+    setStatus('Error analyzing photo: ' + err.message + ' (if this is a .heic file, convert it to .jpg first)', true);
   }
-  refDescriptor = detection.descriptor;
-  setStatus('Reference face captured. Ready to search.');
 });
 
 function initTokenClient() {
@@ -334,7 +349,7 @@ async function runSearch() {
       const blob = await fetchImageBlob(f.id);
       const img = await faceapi.bufferToImage(blob);
       const detections = await faceapi
-        .detectAllFaces(img)
+        .detectAllFaces(img, detectorOptions)
         .withFaceLandmarks()
         .withFaceDescriptors();
 
