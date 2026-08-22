@@ -1,10 +1,10 @@
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Drive Person Finder</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/face-api.js/0.22.2/face-api.min.js"></script>
 <style>
-<html lang="en">
   :root {
     --bg: #0f1115;
     --card: #171a21;
