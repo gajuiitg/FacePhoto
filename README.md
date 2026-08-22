@@ -153,7 +153,9 @@
         1. Go to <code>console.cloud.google.com</code> → create/select a project.<br>
         2. Enable the <b>Google Drive API</b>.<br>
           3. Create credentials → <b>OAuth client ID</b> → type <b>Web application</b> →
-            add the exact localhost origin you use, such as <code>http://localhost:8000</code>, under "Authorized JavaScript origins".<br>
+            under "Authorized JavaScript origins", add the exact origin where this page runs:
+            <code>https://gajuiitg.github.io</code> for the deployed site, or
+            <code>http://localhost:8000</code> for local testing. Do not add the page path.<br>
         4. Create an <b>API key</b> too.<br>
         5. Paste both below. They stay in your browser only.
       </p>
@@ -288,19 +290,24 @@ function initTokenClient() {
     setStatus('OAuth Client ID is invalid. Paste the complete value ending in .apps.googleusercontent.com.', true);
     return null;
   }
-  return google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
-    scope: 'https://www.googleapis.com/auth/drive.readonly',
-    callback: (resp) => {
-      if (resp.error) {
-        setStatus('Sign-in failed: ' + resp.error, true);
-        return;
-      }
-      accessToken = resp.access_token;
-      document.getElementById('signOutBtn').style.display = 'inline-block';
-      runSearch();
-    },
-  });
+  try {
+    return google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      callback: (resp) => {
+        if (resp.error) {
+          setStatus('Sign-in failed: ' + resp.error + '. Check that this exact client ID exists in Google Cloud and that this site origin is authorized.', true);
+          return;
+        }
+        accessToken = resp.access_token;
+        document.getElementById('signOutBtn').style.display = 'inline-block';
+        runSearch();
+      },
+    });
+  } catch (err) {
+    setStatus('Could not initialize Google sign-in: ' + err.message + '. Use a Web application OAuth client from Google Cloud, not an API key or another client type.', true);
+    return null;
+  }
 }
 
 async function listImagesInFolder(folderId, apiKey) {
