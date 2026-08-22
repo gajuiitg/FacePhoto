@@ -3,7 +3,7 @@
 <meta charset="UTF-8">
 <title>Drive Person Finder</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/face-api.js/0.22.2/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" onerror="window.faceApiLoadError = true"></script>
 <style>
   :root {
     --bg: #0f1115;
@@ -152,24 +152,24 @@
       <p style="font-size:13px; color:var(--muted); line-height:1.5;">
         1. Go to <code>console.cloud.google.com</code> → create/select a project.<br>
         2. Enable the <b>Google Drive API</b>.<br>
-        3. Create credentials → <b>OAuth client ID</b> → type <b>Web application</b> →
-           add this page's URL under "Authorized JavaScript origins".<br>
+          3. Create credentials → <b>OAuth client ID</b> → type <b>Web application</b> →
+            add the exact localhost origin you use, such as <code>http://localhost:8000</code>, under "Authorized JavaScript origins".<br>
         4. Create an <b>API key</b> too.<br>
         5. Paste both below. They stay in your browser only.
       </p>
     </details>
 
     <label for="clientId">OAuth Client ID</label>
-    <input type="text" id="clientId" placeholder="xxxxxxxx.apps.googleusercontent.com">
+    <input type="text" id="clientId" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off">
 
     <label for="apiKey">API Key</label>
-    <input type="text" id="apiKey" placeholder="AIzaSy...">
+    <input type="text" id="apiKey" placeholder="AIzaSy..." autocomplete="off">
 
     <label for="folderId">Folder ID</label>
     <input type="text" id="folderId" value="1N64KZLDRgeIVfUHtZ4A9diF4fRjwwp4Z">
 
     <label for="refInput">Reference photo of the person</label>
-    <input type="file" id="refInput" accept="image/*" disabled>
+    <input type="file" id="refInput" accept="image/*">
     <img id="refPreview" alt="reference preview">
 
     <label for="threshold" style="margin-top:12px;">Match strictness (lower = stricter match)</label>
@@ -207,28 +207,40 @@ function extractFolderId(raw) {
   return match ? match[0] : raw.trim();
 }
 
+function normalizeCredential(value) {
+  return value.replace(/\s+/g, '').trim();
+}
+
 async function loadModels() {
   try {
+    if (typeof faceapi === 'undefined') {
+      throw new Error('face-api.js library failed to load from cdn.jsdelivr.net');
+    }
     // tinyFaceDetector is a single small file and loads far more reliably
     // from CDNs than ssdMobilenetv1 (which needs several shard files).
     await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
     await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
     await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
     modelsReady = true;
-    document.getElementById('refInput').disabled = false;
     setStatus('Ready. Upload a reference photo and sign in to search.');
   } catch (e) {
     console.error('Model load failed:', e);
     setStatus('Failed to load face models: ' + e.message + ' (check console for details, and see if cdn.jsdelivr.net is reachable)', true);
   }
 }
-loadModels();
+if (typeof faceapi === 'undefined') {
+  setStatus('Failed to load face models: face-api.js library is unavailable. Check whether cdn.jsdelivr.net is reachable.', true);
+} else {
+  loadModels();
+}
 
 document.getElementById('threshold').addEventListener('input', (e) => {
   document.getElementById('thresholdLabel').textContent = 'Threshold: ' + e.target.value;
 });
 
-const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 });
+const detectorOptions = typeof faceapi !== 'undefined'
+  ? new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 })
+  : null;
 
 document.getElementById('refInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -265,9 +277,15 @@ document.getElementById('refInput').addEventListener('change', async (e) => {
 });
 
 function initTokenClient() {
-  const clientId = document.getElementById('clientId').value.trim();
+  const clientIdInput = document.getElementById('clientId');
+  const clientId = normalizeCredential(clientIdInput.value);
+  clientIdInput.value = clientId;
   if (!clientId) {
     setStatus('Enter your OAuth Client ID first.', true);
+    return null;
+  }
+  if (!/^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId)) {
+    setStatus('OAuth Client ID is invalid. Paste the complete value ending in .apps.googleusercontent.com.', true);
     return null;
   }
   return google.accounts.oauth2.initTokenClient({
@@ -318,12 +336,19 @@ async function runSearch() {
     return;
   }
 
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const apiKeyInput = document.getElementById('apiKey');
+  const apiKey = normalizeCredential(apiKeyInput.value);
+  apiKeyInput.value = apiKey;
   const folderId = extractFolderId(document.getElementById('folderId').value);
   const threshold = parseFloat(document.getElementById('threshold').value);
 
   if (!apiKey) { setStatus('Enter your API Key first.', true); return; }
   if (!folderId) { setStatus('Enter a folder ID or link.', true); return; }
+
+  if (window.location.protocol === 'file:') {
+    setStatus('Run this page from http://localhost, not directly as a file. Example: py -m http.server 8000 --directory "C:\\Users\\THIS PC\\Downloads"', true);
+    return;
+  }
 
   setStatus('Listing photos in folder…');
   let files;
@@ -401,6 +426,14 @@ function addResultCard(file, distance) {
 }
 
 document.getElementById('signInBtn').addEventListener('click', () => {
+  if (window.location.protocol === 'file:') {
+    setStatus('Google sign-in requires a web origin. Start a local server, then open http://localhost:8000/facecheck.html. Add that exact origin to your OAuth client settings.', true);
+    return;
+  }
+  if (!window.google?.accounts?.oauth2) {
+    setStatus('Google sign-in is still loading. Check that accounts.google.com is reachable, then try again.', true);
+    return;
+  }
   if (!refDescriptor) {
     setStatus('Upload a reference photo with a visible face before searching.', true);
     return;
