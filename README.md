@@ -1,6 +1,5 @@
 <html lang="en">
 <head>
-<meta name="google-site-verification" content="LvwRw__hvxynJhfxTBfeEEcX60bRv7MIyI2Un6NXQsQ" >
 <meta charset="UTF-8">
 <title>Drive Person Finder</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -468,4 +467,5 @@ document.getElementById('signOutBtn').addEventListener('click', () => {
 });
 </script>
 </body>
+<meta name="google-site-verification" content="LvwRw__hvxynJhfxTBfeEEcX60bRv7MIyI2Un6NXQsQ" />
 </html>
